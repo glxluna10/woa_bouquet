@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>1 Rose, Every Language</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,500;1,600&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%;background:#000;color:#fff}
+  body{display:flex;flex-direction:column;overflow:hidden;font-family:"Cormorant Garamond",Georgia,serif}
+
+  h1{
+    text-align:center;font-style:italic;font-weight:600;letter-spacing:.02em;
+    padding:clamp(14px,3.5vh,34px) 16px 0;
+    font-size:clamp(2rem,5.5vw,3.6rem);
+    color:#d4162f;
+    text-shadow:0 0 10px rgba(220,20,60,.8),0 0 30px rgba(200,16,46,.55),0 0 70px rgba(140,0,30,.6);
+    animation:rise 2.4s ease-out both,glow 4.5s 2.4s ease-in-out infinite;
+  }
+  @keyframes rise{from{opacity:0;letter-spacing:.14em;filter:blur(6px)}to{opacity:1;letter-spacing:.02em;filter:blur(0)}}
+  @keyframes glow{50%{color:#e61e3c;text-shadow:0 0 14px rgba(255,50,80,.9),0 0 42px rgba(220,20,60,.65),0 0 95px rgba(160,0,35,.7)}}
+
+  main{flex:1;min-height:0;position:relative}
+  canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:crosshair}
+
+  .bar{position:absolute;left:50%;bottom:clamp(10px,2.5vh,24px);transform:translateX(-50%);display:flex;gap:12px;z-index:2}
+  #start{position:absolute;inset:0;z-index:3;display:grid;place-items:center;background:#000;transition:opacity 1.2s ease}
+  #start.gone{opacity:0;pointer-events:none}
+  #start button{font-size:1.4rem;padding:.5em 2.2em}
+  button{
+    font:italic 500 1.05rem "Cormorant Garamond",Georgia,serif;
+    color:#b3122b;background:transparent;border:1px solid rgba(179,18,43,.5);
+    padding:.35em 1.4em;border-radius:999px;cursor:pointer;
+    transition:color .3s,border-color .3s,box-shadow .3s;
+  }
+  button:hover{color:#ff4d6a;border-color:#ff4d6a;box-shadow:0 0 18px rgba(220,20,60,.45)}
+  button:focus-visible{outline:2px solid #ff4d6a;outline-offset:3px}
+
+  @media (prefers-reduced-motion:reduce){h1{animation:none}}
+</style>
+</head>
+<body>
+<h1>1 Rose, Every Language</h1>
+<main>
+  <canvas id="c" role="img" aria-label="A rose drawn entirely from the words I love you in many languages"></canvas>
+  <div class="bar">
+    <button id="mute" type="button" aria-pressed="false">Mute</button>
+    <button id="replay" type="button">Replay</button>
+  </div>
+  <div id="start"><button id="begin" type="button">Begin</button></div>
+</main>
+<audio id="bgm" src="angel.mp3" loop preload="auto"></audio>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ---------- Konfigurasi ---------- */
+  const W = 800, H = 1100;          // ruang desain (diskalakan otomatis ke layar)
+  const CX = 400, CY = 310, SQ = .85; // pusat kuntum & kemiringan (perspektif)
+  const FONT = '"Cormorant Garamond","Noto Serif","Noto Sans CJK JP","Noto Sans Arabic",Georgia,serif';
+  const REDUCED = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const PACE = 4.5;       // kecepatan animasi: makin besar makin lambat (1 = kecepatan awal)
+  const INTRO_END = 9.8;  // akhir animasi tumbuh (sebelum dikali PACE); musik berhenti di sini
+
+  const PHRASES = [
+    'I love you','Te amo','Je t\u2019aime','Ich liebe dich','Ti amo','Seni seviyorum','Aishiteru','\u611B\u3057\u3066\u308B',
+    '\uC0AC\uB791\uD574','\u6211\u7231\u4F60','\u042F \u0442\u0435\u0431\u044F \u043B\u044E\u0431\u043B\u044E','\u0623\u062D\u0628\u0643',
+    '\u05D0\u05E0\u05D9 \u05D0\u05D5\u05D4\u05D1 \u05D0\u05D5\u05EA\u05DA','\u03A3\u2019 \u03B1\u03B3\u03B1\u03C0\u03CF','Aku cinta kamu',
+    'Mahal kita','Anh y\u00EAu em','Jag \u00E4lskar dig','Ik hou van je','Kocham ci\u0119','Szeretlek','Rakastan sinua',
+    'Jeg elsker deg','Miluji t\u011B','Te iubesc','Volim te','Es tevi m\u012Blu','Ek is lief vir jou','Nakupenda',
+    '\u092E\u0948\u0902 \u0924\u0941\u092E\u0938\u0947 \u092A\u094D\u092F\u093E\u0930 \u0915\u0930\u0924\u093E \u0939\u0942\u0901',
+    '\u0E09\u0E31\u0E19\u0E23\u0E31\u0E01\u0E04\u0E38\u0E13','Mi amas vin','Te quiero','Eu te amo','\u00C9g elska \u00FEig',
+    'T\u00E1 gr\u00E1 agam duit','Rwy\u2019n dy garu di','M\u0259n s\u0259ni sevir\u0259m','Aloha au i\u0101 \u02BBoe',
+    'Ngiyakuthanda','Mina uyakuthanda','Ya tebe kokhayu','Sevgilim','Ana behibak','Amo-te','Ti vojim','Maite zaitut'
+  ];
+  // acak urutan agar bahasa tersebar merata
+  for (let i = PHRASES.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [PHRASES[i], PHRASES[j]] = [PHRASES[j], PHRASES[i]];
+  }
+
+  /* ---------- Utilitas ---------- */
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
+  const smooth = t => t * t * (3 - 2 * t);
+  const rand = (a, b) => a + Math.random() * (b - a);
+
+  // Path: kumpulan titik + panjang kumulatif, supaya teks bisa "berjalan" di atas kurva
+  function buildPath(fn, n = 500) {
+    const pts = [], cum = [0];
+    for (let i = 0; i <= n; i++) {
+      pts.push(fn(i / n));
+      if (i) cum.push(cum[i - 1] + Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y));
+    }
+    return { pts, cum, len: cum[n] };
+  }
+  function pointAt(p, s) {
+    let lo = 0, hi = p.cum.length - 1;
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (p.cum[m] < s) lo = m; else hi = m; }
+    const f = (s - p.cum[lo]) / ((p.cum[hi] - p.cum[lo]) || 1);
+    const a = p.pts[lo], b = p.pts[hi];
+    return { x: a.x + (b.x - a.x) * f, y: a.y + (b.y - a.y) * f };
+  }
+
+  // Menyusun frasa "I love you" berurutan sepanjang path
+  let phraseIdx = 0;
+  function layoutText(path, sizeAt, colorAt, gap = 7) {
+    const items = [];
+    let s = 2;
+    while (s < path.len - 6) {
+      const text = PHRASES[phraseIdx++ % PHRASES.length];
+      const fs = sizeAt(s / path.len);
+      const font = `italic 500 ${fs.toFixed(1)}px ${FONT}`;
+      ctx.font = font;
+      const w = ctx.measureText(text).width;
+      if (s + w > path.len) break;
+      const a = pointAt(path, s), b = pointAt(path, s + w), c = pointAt(path, s + w / 2);
+      let ang = Math.atan2(b.y - a.y, b.x - a.x);
+      if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI; // jaga teks tidak terbalik
+      const u = (s + w / 2) / path.len;
+      items.push({ text, font, fs, x: c.x, y: c.y, a: ang, u, col: colorAt(u, c), ph: Math.random() * 6.28 });
+      s += w + gap;
+    }
+    return items;
+  }
+
+  /* ---------- Membangun mawar ---------- */
+  const groups = [];
+  const petalItems = [];
+
+  // Tangkai: kurva bezier dari bawah ke kuntum
+  const B = [[400, 1060], [352, 900], [452, 690], [400, 470]];
+  const bez = t => {
+    const m = 1 - t;
+    return {
+      x: m*m*m*B[0][0] + 3*m*m*t*B[1][0] + 3*m*t*t*B[2][0] + t*t*t*B[3][0],
+      y: m*m*m*B[0][1] + 3*m*m*t*B[1][1] + 3*m*t*t*B[2][1] + t*t*t*B[3][1]
+    };
+  };
+
+  function buildStem() {
+    const items = [];
+    for (const off of [-10, 0, 10]) {
+      const path = buildPath(t => {
+        const p = bez(t - .001), q = bez(t + .001);
+        const nx = -(q.y - p.y), ny = q.x - p.x, l = Math.hypot(nx, ny) || 1;
+        const c = bez(t);
+        return { x: c.x + nx / l * off, y: c.y + ny / l * off };
+      }, 500);
+      items.push(...layoutText(path, () => 15, u => ({ h: 140, s: 48, l: 14 + u * 12 })));
+    }
+    groups.push({ items, start: .2, dur: 3.6 });
+  }
+
+  function buildLeaf(sT, deg, L, hw, bend, start) {
+    const base = bez(sT), ang = deg * Math.PI / 180, ca = Math.cos(ang), sa = Math.sin(ang);
+    const P = (a, off) => ({ x: base.x + a * ca - off * sa, y: base.y + a * sa + off * ca });
+    const bendOff = u => bend * L * u * u;
+    const wid = u => hw * Math.pow(Math.sin(Math.PI * Math.pow(u, .8)), .9);
+    const outline = buildPath(t => {
+      const left = t < .5, u = .02 + .96 * (left ? t * 2 : (1 - t) * 2);
+      return P(L * u, bendOff(u) + (left ? -1 : 1) * wid(u));
+    }, 400);
+    const mid = buildPath(t => { const u = .05 + .9 * t; return P(L * u, bendOff(u)); }, 200);
+    const col = u => ({ h: 138, s: 46, l: 16 + u * 12 });
+    const items = [
+      ...layoutText(outline, () => 14, col),
+      ...layoutText(mid, () => 13, (u) => ({ h: 134, s: 40, l: 24 + u * 8 }))
+    ];
+    groups.push({ items, poly: outline.pts, start, dur: 2.2 });
+  }
+
+  function buildPetal(deg, inner, tip, hw, hue, start) {
+    const ang = deg * Math.PI / 180, ca = Math.cos(ang), sa = Math.sin(ang);
+    const P = (a, b) => ({ x: CX + (a * ca - b * sa), y: CY + (a * sa + b * ca) * SQ });
+    const wid = u => hw * Math.pow(Math.sin(Math.PI * Math.pow(u, .62)), .75);
+    const items = [];
+    let poly = null;
+    for (const k of [1, .68, .38]) {
+      const a1 = inner + (tip - inner) * (.5 + .5 * k);
+      const path = buildPath(t => {
+        const left = t < .5, u = .04 + .94 * (left ? t * 2 : (1 - t) * 2);
+        return P(inner + (a1 - inner) * u, (left ? -1 : 1) * wid(u) * k);
+      }, 400);
+      if (k === 1) poly = path.pts;
+      items.push(...layoutText(path, () => 15, (u, c) => {
+        const d = Math.hypot(c.x - CX, (c.y - CY) / SQ);
+        return { h: hue + rand(-3, 3), s: 80, l: clamp(22 + (d - 40) / 210 * 26 + k * 4, 16, 52) };
+      }));
+    }
+    const g = { items, poly, start, dur: 2.4, breathe: true, ph: rand(0, 6.28) };
+    groups.push(g);
+    petalItems.push(...items);
+  }
+
+  function buildSpiral(start) {
+    const R = 145, TH0 = 4.7, TH1 = Math.PI * 2 * 6;
+    const lobe = th => 1 + .1 * Math.sin(5 * th + 1);
+    const path = buildPath(u => {
+      const th = TH0 + u * (TH1 - TH0), r = R * th / TH1 * lobe(th);
+      return { x: CX + r * Math.cos(th), y: CY + r * Math.sin(th) * SQ };
+    }, 1600);
+    const items = layoutText(path, u => 10 + 8 * u, u => {
+      const th = TH0 + u * (TH1 - TH0);
+      return { h: 350 + 4 * Math.sin(th * 2), s: 78, l: 19 + 25 * u + 5 * Math.sin(5 * th + 1) };
+    }, 5);
+    const poly = [];
+    for (let i = 0; i < 72; i++) {
+      const th = i / 72 * Math.PI * 2, r = R * 1.05 * lobe(th);
+      poly.push({ x: CX + r * Math.cos(th), y: CY + r * Math.sin(th) * SQ });
+    }
+    groups.push({ items, poly, start, dur: 3.6, breathe: true, ph: 0 });
+  }
+
+  function build() {
+    groups.length = 0; petalItems.length = 0; phraseIdx = 0;
+    buildStem();
+    buildLeaf(.35, -150, 230, 62, -.14, 2.0);
+    buildLeaf(.52, -30, 210, 56, .14, 2.7);
+    [-90, -18, 54, 126, 198].forEach((d, i) => buildPetal(d, 45, 250, 72, 350, 3.6 + i * .35));
+    [-54, 18, 90, 162, 234].forEach((d, i) => buildPetal(d, 45, 210, 64, 354, 4.8 + i * .3));
+    buildSpiral(6.2);
+  }
+
+  /* ---------- Render & interaksi ---------- */
+  let dpr = 1, S = 1, OX = 0, OY = 0, T0 = 0, last = 0, lastSpawn = 0;
+  let mx = null, my = null;
+  let started = false, fading = false;
+  const bgm = document.getElementById('bgm');
+  const ripples = [], falling = [];
+  const pos = { x: 0, y: 0 };
+
+  function resize() {
+    const r = canvas.getBoundingClientRect();
+    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.round(r.width * dpr);
+    canvas.height = Math.round(r.height * dpr);
+    S = Math.min(r.width / W, r.height / H);
+    OX = (r.width - W * S) / 2;
+    OY = (r.height - H * S) / 2;
+  }
+
+  // Goyangan angin (makin ke atas makin kuat) + "napas" kelopak
+  function warp(x, y, br, t) {
+    const h = clamp((1060 - y) / 760), k = REDUCED ? 0 : h * h;
+    pos.x = x + (Math.sin(t * .7) * 9 + Math.sin(t * 1.3 + 1) * 2.5) * k + (x - CX) * br;
+    pos.y = y + (y - CY) * br;
+  }
+
+  function frame(now) {
+    const t = started ? (now - T0) / 1000 : 0;
+    const prog = t / PACE;               // waktu animasi tumbuh (sudah diperlambat)
+    const it = REDUCED ? 99 : prog;
+    const dt = Math.min(.05, (now - last) / 1000); last = now;
+
+    // animasi selesai -> musik di-fade out lalu berhenti
+    if (started && !fading && !bgm.paused && prog >= INTRO_END) fading = true;
+    if (fading) {
+      bgm.volume = Math.max(0, bgm.volume - dt / 2.5);
+      if (bgm.volume === 0) { bgm.pause(); fading = false; }
+    }
+    const k = dpr * S, ox = dpr * OX, oy = dpr * OY;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(k, 0, 0, k, ox, oy);
+
+    // cahaya merah lembut di belakang kuntum
+    const bloom = smooth(clamp((it - 5) / 5));
+    const gr = ctx.createRadialGradient(CX, CY, 10, CX, CY, 320);
+    gr.addColorStop(0, `rgba(150,10,35,${(.22 + .05 * Math.sin(t * 1.1)) * bloom})`);
+    gr.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gr;
+    ctx.fillRect(CX - 340, CY - 340, 680, 680);
+
+    for (let i = ripples.length - 1; i >= 0; i--) if (t - ripples[i].t > 2.4) ripples.splice(i, 1);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    let shadowOn = false;
+
+    for (const g of groups) {
+      const gp = smooth(clamp((it - g.start) / g.dur));
+      if (gp <= 0) continue;
+      const br = g.breathe && !REDUCED ? .012 * Math.sin(t * 1.1 + g.ph) : 0;
+
+      if (g.poly) { // isi hitam: kelopak depan menutupi yang di belakang
+        ctx.setTransform(k, 0, 0, k, ox, oy);
+        ctx.beginPath();
+        g.poly.forEach((p, i) => { warp(p.x, p.y, br, t); i ? ctx.lineTo(pos.x, pos.y) : ctx.moveTo(pos.x, pos.y); });
+        ctx.closePath();
+        ctx.globalAlpha = clamp(gp * 4);
+        ctx.fillStyle = '#000';
+        ctx.fill();
+      }
+
+      for (const m of g.items) {
+        const r = clamp((gp - m.u * .88) / .12);
+        if (r <= 0) continue;
+        warp(m.x, m.y, br, t);
+        let x = pos.x, y = pos.y, glow = 0;
+
+        if (mx !== null) { // kursor mendorong & menyalakan teks di sekitarnya
+          const dx = x - mx, dy = y - my, d = Math.hypot(dx, dy);
+          if (d < 110) { const f = (1 - d / 110) ** 2; glow += f; x += dx / (d || 1) * 14 * f; y += dy / (d || 1) * 14 * f; }
+        }
+        for (const rp of ripples) { // gelombang cahaya dari klik
+          const age = t - rp.t, e = (Math.hypot(x - rp.x, y - rp.y) - age * 340) / 45;
+          glow += Math.exp(-e * e) * Math.max(0, 1 - age / 2.2);
+        }
+
+        const c = m.col;
+        const l = clamp(c.l + (REDUCED ? 0 : Math.sin(t * 1.2 + m.ph) * 3) + glow * 32 + (1 - r) * 34, 5, 82);
+        ctx.fillStyle = `hsl(${c.h.toFixed(0)} ${c.s}% ${l.toFixed(1)}%)`;
+        ctx.globalAlpha = r;
+        if (glow > .25) { ctx.shadowColor = 'rgba(255,40,80,.9)'; ctx.shadowBlur = 10 * glow * dpr; shadowOn = true; }
+        else if (shadowOn) { ctx.shadowBlur = 0; shadowOn = false; }
+
+        const cs = Math.cos(m.a) * k, sn = Math.sin(m.a) * k;
+        ctx.setTransform(cs, sn, -sn, cs, x * k + ox, y * k + oy);
+        ctx.font = m.font;
+        ctx.fillText(m.text, 0, 0);
+      }
+    }
+    ctx.shadowBlur = 0;
+
+    // kata-kata yang gugur pelan seperti kelopak
+    if (!REDUCED && it > 8.5 && t - lastSpawn > 1.3 && falling.length < 16 && petalItems.length) {
+      lastSpawn = t;
+      const p = petalItems[Math.floor(Math.random() * petalItems.length)];
+      warp(p.x, p.y, 0, t);
+      falling.push({ text: p.text, font: p.font, x: pos.x, y: pos.y, vy: rand(22, 42), vr: rand(-.4, .4), rot: p.a, ph: rand(0, 6.28), life: 0, h: p.col.h });
+    }
+    for (let i = falling.length - 1; i >= 0; i--) {
+      const f = falling[i];
+      f.life += dt;
+      f.x += Math.sin(f.life * 1.5 + f.ph) * 14 * dt;
+      f.y += f.vy * dt;
+      f.rot += f.vr * dt;
+      if (f.life > 8 || f.y > H - 20) { falling.splice(i, 1); continue; }
+      const cs = Math.cos(f.rot) * k, sn = Math.sin(f.rot) * k;
+      ctx.setTransform(cs, sn, -sn, cs, f.x * k + ox, f.y * k + oy);
+      ctx.globalAlpha = clamp(f.life / .8) * clamp(1 - f.life / 8) * .85;
+      ctx.fillStyle = `hsl(${f.h.toFixed(0)} 80% 40%)`;
+      ctx.font = f.font;
+      ctx.fillText(f.text, 0, 0);
+    }
+
+    requestAnimationFrame(frame);
+  }
+
+  function toDesign(e) {
+    const r = canvas.getBoundingClientRect();
+    return { x: (e.clientX - r.left - OX) / S, y: (e.clientY - r.top - OY) / S };
+  }
+  canvas.addEventListener('pointermove', e => { const p = toDesign(e); mx = p.x; my = p.y; });
+  canvas.addEventListener('pointerleave', () => { mx = my = null; });
+  canvas.addEventListener('pointerdown', e => {
+    const p = toDesign(e);
+    ripples.push({ x: p.x, y: p.y, t: (performance.now() - T0) / 1000 });
+  });
+  window.addEventListener('resize', resize);
+  function startShow() {
+    started = true; fading = false;
+    T0 = performance.now(); lastSpawn = 0; falling.length = 0; ripples.length = 0;
+    bgm.currentTime = 0; bgm.volume = 1;
+    const p = bgm.play();
+    if (p && p.catch) p.catch(() => {}); // abaikan jika file mp3 tidak ditemukan
+  }
+  document.getElementById('begin').addEventListener('click', () => {
+    document.getElementById('start').classList.add('gone');
+    startShow();
+  });
+  document.getElementById('replay').addEventListener('click', startShow);
+
+  const muteBtn = document.getElementById('mute');
+  muteBtn.addEventListener('click', () => {
+    bgm.muted = !bgm.muted;
+    muteBtn.textContent = bgm.muted ? 'Unmute' : 'Mute';
+    muteBtn.setAttribute('aria-pressed', String(bgm.muted));
+  });
+
+  /* ---------- Mulai (tunggu font siap supaya pengukuran teks akurat) ---------- */
+  const fontReady = (document.fonts && document.fonts.load)
+    ? Promise.race([
+        document.fonts.load('italic 500 16px "Cormorant Garamond"'),
+        new Promise(res => setTimeout(res, 1500))
+      ]).catch(() => {})
+    : Promise.resolve();
+
+  fontReady.then(() => {
+    build();
+    resize();
+    T0 = last = performance.now();
+    requestAnimationFrame(frame);
+  });
+})();
+</script>
+</body>
+</html>
